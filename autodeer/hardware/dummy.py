@@ -61,7 +61,7 @@ class dummyInterface(Interface):
         with open(config_file, mode='r') as file:
             config = yaml.safe_load(file)
             self.config = config
-        
+
         Dummy = config['Spectrometer']['Dummy']
         Bridge = config['Spectrometer']['Bridge']
         resonator_list = list(config['Resonators'].keys())

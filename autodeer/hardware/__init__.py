@@ -18,5 +18,6 @@
 #     from .Bruker_AWG import *
 
 # from .ETH_awg_load import *
-
+from .dummy import *  
+from .B12T_epr import *
 

@@ -417,6 +417,7 @@ class autoDEERWorker(QtCore.QRunnable):
         
         methods = self._build_methods()
 
+
         for method in methods:
             if self.stop_flag:
                 self.signals.finished.emit()

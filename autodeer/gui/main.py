@@ -297,6 +297,8 @@ class autoDEERUI(QMainWindow):
             model = 'ETH_AWG'
         elif spectrometer['Manufacturer'] == 'Dummy':
             model = 'Dummy'
+        elif spectrometer['Manufacturer'] == 'B12T':
+            model = 'B12T'
         
         try:
             if model == 'Dummy':
@@ -319,6 +321,12 @@ class autoDEERUI(QMainWindow):
                 self.spectromterInterface = BrukerAWG(filename_edit)
                 self.spectromterInterface.savefolder = self.current_folder
                 self.Bruker=True
+            elif model == "B12T":
+                from autodeer.hardware.B12T_epr import B12TInterface
+                self.spectromterInterface = B12TInterface(filename_edit)
+                self.spectromterInterface.savefolder = self.current_folder
+                self.Bruker=False
+                
         except ImportError:
             QMessageBox.about(self,'ERORR!', 
                               'The spectrometer interface could not be loaded!\n'+
@@ -446,7 +454,6 @@ class autoDEERUI(QMainWindow):
             dataset = self.current_data['fieldsweep']
         else:
             self.current_data['fieldsweep'] = dataset
-
         fsweep_analysis = ad.FieldSweepAnalysis(dataset)
         fsweep_analysis.calc_gyro()
         main_log.info(f"Calculated gyro {fsweep_analysis.gyro*1e3:.3f} MHz/T")
@@ -1014,7 +1021,6 @@ class autoDEERUI(QMainWindow):
             user_inputs=userinput, cores=self.cores )
         
         self.starttime = time.time()
-
         self.worker.update_deersettings(self.deer_settings)
     
         self.worker.signals.status.connect(self.msgbar.setText)
