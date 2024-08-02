@@ -113,17 +113,17 @@ class B12TInterface(Interface):
         self.state = True
         self.cur_exp = sequence
         self.start_time = time.time()
-        if isinstance(self.cur_exp, FieldSweepSequence):
-            _send_message(".server.open = 'two pulse echo fse.tpl'")
-            _send_message(".server.opmode = 'Operate'")
-            _send_message(".spec.BRIDGE.RecvAmp = 0")
-            _send_message(".server.COMPILE")
-            _send_message(".daemon.fguid = 'fsweep'")
-            if '0' in _send_message(".daemon.state"):
-                _send_message(".daemon.stop")
-            _send_message(".daemon.run")
-            while self.isrunning():
-                time.sleep(0.2)
+        # if isinstance(self.cur_exp, FieldSweepSequence):
+        #     _send_message(".server.open = 'two pulse echo fse.tpl'")
+        #     _send_message(".server.opmode = 'Operate'")
+        #     _send_message(".spec.BRIDGE.RecvAmp = 0")
+        #     _send_message(".server.COMPILE")
+        #     _send_message(".daemon.fguid = 'fsweep'")
+        #     if '0' in _send_message(".daemon.state"):
+        #         _send_message(".daemon.stop")
+        #     _send_message(".daemon.run")
+        #     while self.isrunning():
+        #         time.sleep(0.2)
 
         return super().launch(sequence, savename)
     

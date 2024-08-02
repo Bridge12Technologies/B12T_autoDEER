@@ -217,6 +217,10 @@ class autoDEERUI(QMainWindow):
         self.deer_settings = {'ESEEM':None, 'ExpType':'5pDEER'}
         self.correction_factor=1
 
+        self.load_folder('./')
+        self.load_spectrometer_config('./config_files/B12TEPR.yaml')
+        self.connect_spectrometer()
+
     def set_spectrometer_connected_light(self, state):
         if state == 0:
             light_pixmap = QtGui.QPixmap('icons:Red.png')
@@ -473,6 +477,7 @@ class autoDEERUI(QMainWindow):
 
         if self.worker is not None:
             self.worker.update_gyro(fsweep_analysis.gyro)
+
         worker = Worker(fieldsweep_fit, fsweep_analysis)
         worker.signals.result.connect(self.refresh_fieldsweep_after_fit)
         
