@@ -218,8 +218,6 @@ class autoDEERUI(QMainWindow):
         self.correction_factor=1
 
         self.load_folder('./')
-        self.load_spectrometer_config('./config_files/B12TEPR.yaml')
-        self.connect_spectrometer()
 
     def set_spectrometer_connected_light(self, state):
         if state == 0:

@@ -28,7 +28,7 @@ def create_Nmodel(mwFreq):
         system = SpinSystem([1/2],[1],[gx, gy, gz], [axy*28.0328,axy*28.0328,az*28.0328])
         system.gn = np.array([0.4038])
 
-        _,y =build_spectrum(system, mwFreq, B,Guass_broadening=GB);
+        _,y =build_spectrum(system, mwFreq, B,Guass_broadening=GB)
         y_new = np.interp(B,B+Boffset,y)
         return y_new
     
@@ -191,12 +191,14 @@ class FieldSweepAnalysis():
 
         else:
             mymodel  = create_Nmodel(self.LO*1e3)
+
         B = np.linspace(self.axis.min(), self.axis.max(), self.data.shape[0])*0.1
         if np.iscomplexobj(self.data):
             Vexp = dl.correctphase(self.data.to_numpy())
         else:
             Vexp = self.data.to_numpy()
         result = dl.fit(mymodel,Vexp,B,verbose=2,reg=False,  **kwargs)
+
         self.results = result
         self.model = mymodel
         return result

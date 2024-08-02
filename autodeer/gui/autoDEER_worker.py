@@ -149,6 +149,7 @@ class autoDEERWorker(QtCore.QRunnable):
             time.sleep(self.updaterate)
         self.signals.status.emit('Field-sweep complete')
         self.signals.fsweep_result.emit(self.interface.acquire_dataset())
+        time.sleep(1000)
 
     def run_respro(self):
         '''
@@ -417,7 +418,7 @@ class autoDEERWorker(QtCore.QRunnable):
         
         methods = self._build_methods()
 
-
+        
         for method in methods:
             if self.stop_flag:
                 self.signals.finished.emit()
