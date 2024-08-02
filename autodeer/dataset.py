@@ -167,18 +167,16 @@ def create_dataset_from_b12t(filepath):
     data = dnp.load(filepath, autodetect_coords = True, autodetect_dims = True)
     data_real = data['x',0].sum('x')
     data_imag = data['x',1].sum('x')
-    data = data_real + 1j * data_imag
-    bg = np.mean(data)
-    data -= bg
-    
+    data = data_real + 1j*data_imag
+
     default_labels = ['X','Y','Z','T']
     dims = default_labels[:len(data.dims)]
     coords = data.coords.coords
     attrs = data.attrs
     attrs['LO'] = float(attrs['BRIDGE_Frequency'].replace(' GHz', ''))
-    attrs['shots'] = int(attrs['System_Shots'])
+    attrs['shots'] = int(attrs['System_Shots']) if int(attrs['System_Shots']) != 0 else 1
     attrs['nAvgs'] = eval(attrs['streams_scans'])[0]
-    attrs['nPcyc'] = int(attrs['idx'])
+    attrs['nPcyc'] = int(attrs['idx']) if 'idx' in attrs else 1
     # for key, val in attrs.items():
     #     print(key, val)
     return xr.DataArray(data.values, dims=dims, coords=coords, attrs=attrs)
