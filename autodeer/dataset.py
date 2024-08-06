@@ -168,11 +168,15 @@ def create_dataset_from_b12t(filepath):
     data_real = data['x',0].sum('x')
     data_imag = data['x',1].sum('x')
     data = data_real + 1j*data_imag
+    for dim in data.dims:
+        if dim + '_unit' in data.attrs and data.attrs[dim + '_unit'] == 'T':
+            data.coords[dim] *= 1e4 # convert unit to Gauss
+            data.attrs[dim + '_unit'] = 'G'
 
     default_labels = ['X','Y','Z','T']
     dims = default_labels[:len(data.dims)]
-    coords = data.coords.coords
     attrs = data.attrs
+    coords = data.coords.coords
     attrs['LO'] = float(attrs['BRIDGE_Frequency'].replace(' GHz', ''))
     attrs['shots'] = int(attrs['System_Shots']) if int(attrs['System_Shots']) != 0 else 1
     attrs['nAvgs'] = eval(attrs['streams_scans'])[0]

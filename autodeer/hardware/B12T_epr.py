@@ -17,23 +17,6 @@ import logging
 
 hw_log = logging.getLogger('interface.B12TEpr')
 
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server_address = ('localhost', 8023)
-sock.connect(server_address)
-
-def _send_message(message, convert:bool = True, raw:bool = False):
-    if message[-1] != '\n':
-        message += '\n'
-    sock.send(message.encode('utf-8'))
-    time.sleep(0.2)
-    data = sock.recv(4096)
-
-    if convert: 
-        return data.decode('utf-8')#.replace("sm>"+message.replace("\n", "")+"=", "")
-    return data
-
-_send_message(".server.message='SpecMan is controlled'")
-
 # def val_in_us(Param):
 #         if len(Param.axis) == 0:
 #             if Param.unit == "us":
@@ -71,15 +54,14 @@ _send_message(".server.message='SpecMan is controlled'")
 # def add_phaseshift(data, phase):
 #     data = data.astype(np.complex128) * np.exp(-1j*phase*np.pi)
 #     return data
-    
 
 class B12TInterface(Interface):
-
 
     def __init__(self,config_file) -> None:
         with open(config_file, mode='r') as file:
             config = yaml.safe_load(file)
             self.config = config
+        # self._connect_epr()      
 
         # Dummy = config['Spectrometer']['Dummy']
         Bridge = config['Spectrometer']['Bridge']
@@ -107,24 +89,19 @@ class B12TInterface(Interface):
         # scale = 75/mode(x).max()
         # self.mode = lambda x: lorenz_fcn(x, fc, fc/Q) * scale
         super().__init__(log=hw_log)
+         
 
     def launch(self, sequence, savename: str, **kwargs):
         hw_log.info(f"Launching {sequence.name} sequence")
         self.state = True
         self.cur_exp = sequence
         self.start_time = time.time()
-        # if isinstance(self.cur_exp, FieldSweepSequence):
-        #     _send_message(".server.open = 'two pulse echo fse.tpl'")
-        #     _send_message(".server.opmode = 'Operate'")
-        #     _send_message(".spec.BRIDGE.RecvAmp = 0")
-        #     _send_message(".server.COMPILE")
-        #     _send_message(".daemon.fguid = 'fsweep'")
-        #     if '0' in _send_message(".daemon.state"):
-        #         _send_message(".daemon.stop")
-        #     _send_message(".daemon.run")
-        #     while self.isrunning():
-        #         time.sleep(0.2)
-
+        if isinstance(self.cur_exp, FieldSweepSequence):
+            self._run_fsweep()
+        elif isinstance(self.cur_exp, ReptimeScan):
+            self._run_reptimescan()
+        else:
+            exit()
         return super().launch(sequence, savename)
     
     def acquire_dataset(self,**kwargs):
@@ -132,38 +109,9 @@ class B12TInterface(Interface):
 
         if isinstance(self.cur_exp, FieldSweepSequence):
             dset = create_dataset_from_b12t('C:/SpecMan4EPRData/buffer/fsweep.exp')
-            
-        # if isinstance(self.cur_exp, DEERSequence):
-        #     if self.cur_exp.t.is_static():
-        #         axes, data = _simulate_CP(self.cur_exp)
-        #     else:
-        #         axes, data =_simulate_deer(self.cur_exp)
-        # elif isinstance(self.cur_exp, FieldSweepSequence):
-        #     axes, data = _simulate_field_sweep(self.cur_exp)
-        # elif isinstance(self.cur_exp,ResonatorProfileSequence):
-        #     axes, data = _similate_respro(self.cur_exp,self.mode)
-        # elif isinstance(self.cur_exp, ReptimeScan):
-        #     axes, data = _simulate_reptimescan(self.cur_exp)
-        # elif isinstance(self.cur_exp,T2RelaxationSequence):
-        #     axes, data = _simulate_T2(self.cur_exp,self.ESEEM)
-        # elif isinstance(self.cur_exp,RefocusedEcho2DSequence):
-        #     axes, data = _simulate_2D_relax(self.cur_exp)
-        # else:
-        #     raise NotImplementedError("Sequence not implemented")
-
-        # time_estimate = self.cur_exp._estimate_time()
-        # if self.speedup != np.inf:
-        #     time_estimate /= self.speedup
-        #     progress = (time.time() - self.start_time) / time_estimate
-        #     if progress > 1:
-        #         progress = 1
-        #     data = add_noise(data, 1/(self.SNR*progress))
-        # else:
-        #     progress = 1
-        # scan_num = self.cur_exp.averages.value
-        # dset = create_dataset_from_sequence(data,self.cur_exp)
-        # dset.attrs['nAvgs'] = int(scan_num*progress)
-        
+            # dset = create_dataset_from_b12t('G:/Shared drives/B12T MRD Exchange/Knowledge/autodeer/data/1921file.exp')
+        elif isinstance(self.cur_exp, ReptimeScan):
+            dset = create_dataset_from_b12t('C:/SpecMan4EPRData/buffer/reptimescan.exp')
     
         return super().acquire_dataset(dset)
     
@@ -194,17 +142,57 @@ class B12TInterface(Interface):
         pass
             
     def isrunning(self) -> bool:
-        if '4' not in _send_message(".daemon.state"):
+        '''
+        4 - idle
+        6 - run 
+        '''
+        if '6' in self.send_message(".daemon.state"):
             return True
         else:
             return False
 
-    
     def terminate(self) -> None:
         self.state = False
         hw_log.info("Terminating sequence")
         return super().terminate()
     
+    
+    def _run_fsweep(self):
+        self.send_message(".server.open = 'two pulse echo fse.tpl'")
+        self.send_message(".server.opmode = 'Operate'")
+        self.send_message(".spec.BRIDGE.RecvAmp = 0")
+        self.send_message(".server.COMPILE")
+        self.send_message(".daemon.fguid = 'fsweep'")
+        if '0' in self.send_message(".daemon.state"):
+            self.send_message(".daemon.stop")
+        self.send_message(".daemon.run")
+    
+    def _run_reptimescan(self):
+        self.send_message(".server.open = 'two pulse echo SRT.tpl'")
+        self.send_message(".server.opmode = 'Operate'")
+        self.send_message(".spec.BRIDGE.RecvAmp = 0")
+        self.send_message(".server.COMPILE")
+        self.send_message(".daemon.fguid = 'reptimescan'")
+        if '0' in self.send_message(".daemon.state"):
+            self.send_message(".daemon.stop")
+        self.send_message(".daemon.run")
+
+    def _connect_epr(self, address: str = 'localhost' , port_number: int = 8023) -> None:
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_address = (address, port_number)
+        self.sock.connect(server_address)
+        self.send_message(".server.message='SpecMan is controlled'")
+
+    def send_message(self, message, convert:bool = True, raw:bool = False):
+        if message[-1] != '\n':
+            message += '\n'
+        self.sock.send(message.encode('utf-8'))
+        time.sleep(0.2)
+        data = self.sock.recv(4096)
+
+        if convert: 
+            return data.decode('utf-8')#.replace("sm>"+message.replace("\n", "")+"=", "")
+        return data
 
 def _run_field_sweep(sequence):
     # Assuming a Nitroxide sample
@@ -347,3 +335,4 @@ def _gen_ESEEM(t,freq,depth):
     # modulation -= depth *(0.5 + 0.5*np.cos(2*np.pi*t*freq)) + depth * (0.5+0.5*np.cos(2*np.pi*t*freq/2))
     # return modulation
     pass
+

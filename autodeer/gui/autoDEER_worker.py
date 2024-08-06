@@ -200,7 +200,7 @@ class autoDEERWorker(QtCore.QRunnable):
             relax.select_pcyc("16step_5p")
         else:
             relax.select_pcyc("DC")
-        relax._estimate_time();
+        relax._estimate_time()
         relax.pulses[1].scale.value = 0
         relax.pulses[3].scale.value = 0
         self.interface.launch(relax,savename=self.savename("CP_Q"),IFgain=2)
