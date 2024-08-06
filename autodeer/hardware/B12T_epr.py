@@ -61,7 +61,7 @@ class B12TInterface(Interface):
         with open(config_file, mode='r') as file:
             config = yaml.safe_load(file)
             self.config = config
-        # self._connect_epr()      
+        self._connect_epr()      
 
         # Dummy = config['Spectrometer']['Dummy']
         Bridge = config['Spectrometer']['Bridge']
@@ -96,23 +96,21 @@ class B12TInterface(Interface):
         self.state = True
         self.cur_exp = sequence
         self.start_time = time.time()
-        if isinstance(self.cur_exp, FieldSweepSequence):
-            self._run_fsweep()
-        elif isinstance(self.cur_exp, ReptimeScan):
-            self._run_reptimescan()
-        else:
-            exit()
         return super().launch(sequence, savename)
     
     def acquire_dataset(self,**kwargs):
         hw_log.debug("Acquiring dataset")
 
         if isinstance(self.cur_exp, FieldSweepSequence):
+            self._run_fsweep(self.cur_exp)
             dset = create_dataset_from_b12t('C:/SpecMan4EPRData/buffer/fsweep.exp')
             # dset = create_dataset_from_b12t('G:/Shared drives/B12T MRD Exchange/Knowledge/autodeer/data/1921file.exp')
         elif isinstance(self.cur_exp, ReptimeScan):
+            self._run_reptimescan(self.cur_exp)
             dset = create_dataset_from_b12t('C:/SpecMan4EPRData/buffer/reptimescan.exp')
-    
+        elif isinstance(self.cur_exp, ResonatorProfileSequence)
+            self._run_respro(self, self.cur_exp)
+            dset = create_dataset_from_b12t('C:/SpecMan4EPRData/buffer/respro.exp')
         return super().acquire_dataset(dset)
     
     def tune_rectpulse(self,*,tp, LO, B, reptime,**kwargs):
@@ -157,8 +155,8 @@ class B12TInterface(Interface):
         return super().terminate()
     
     
-    def _run_fsweep(self):
-        self.send_message(".server.open = 'two pulse echo fse.tpl'")
+    def _run_fsweep(self, FieldSweepSequence: FieldSweepSequence):
+        self.send_message(".server.open = 'two pulse echo fse2.tpl'")
         self.send_message(".server.opmode = 'Operate'")
         self.send_message(".spec.BRIDGE.RecvAmp = 0")
         self.send_message(".server.COMPILE")
@@ -166,16 +164,35 @@ class B12TInterface(Interface):
         if '0' in self.send_message(".daemon.state"):
             self.send_message(".daemon.stop")
         self.send_message(".daemon.run")
+        while self.isrunning():
+            time.sleep(0.2)
     
-    def _run_reptimescan(self):
+    def _run_reptimescan(self, ReptimeScan: ReptimeScan):
         self.send_message(".server.open = 'two pulse echo SRT.tpl'")
         self.send_message(".server.opmode = 'Operate'")
         self.send_message(".spec.BRIDGE.RecvAmp = 0")
+        self.send_message(".spec.FLD.Sweep = 82") # need to change later
         self.send_message(".server.COMPILE")
         self.send_message(".daemon.fguid = 'reptimescan'")
         if '0' in self.send_message(".daemon.state"):
             self.send_message(".daemon.stop")
         self.send_message(".daemon.run")
+        while self.isrunning():
+            time.sleep(0.2)
+    
+    def _run_respro(self, ResonatorProfileSequence: ResonatorProfileSequence):
+        reptime = ResonatorProfileSequence.reptime
+        self.send_message(".server.open = 'two pulse echo Nutation Bandwidth2.tpl'")
+        self.send_message(".server.opmode = 'Operate'")
+        self.send_message(".spec.BRIDGE.RecvAmp = 0")
+        self.send_message(".exp.expaxes.P.RepTime.string = %s us" %reptime)
+        self.send_message(".server.COMPILE")
+        self.send_message(".daemon.fguid = 'respro'")
+        if '0' in self.send_message(".daemon.state"):
+            self.send_message(".daemon.stop")
+        self.send_message(".daemon.run")
+        while self.isrunning():
+            time.sleep(0.2)  
 
     def _connect_epr(self, address: str = 'localhost' , port_number: int = 8023) -> None:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

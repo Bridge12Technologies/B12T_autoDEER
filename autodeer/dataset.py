@@ -181,6 +181,7 @@ def create_dataset_from_b12t(filepath):
     attrs['shots'] = int(attrs['System_Shots']) if int(attrs['System_Shots']) != 0 else 1
     attrs['nAvgs'] = eval(attrs['streams_scans'])[0]
     attrs['nPcyc'] = int(attrs['idx']) if 'idx' in attrs else 1
+    attrs['reptime'] = attrs['RepTime']
     # for key, val in attrs.items():
     #     print(key, val)
     return xr.DataArray(data.values, dims=dims, coords=coords, attrs=attrs)
