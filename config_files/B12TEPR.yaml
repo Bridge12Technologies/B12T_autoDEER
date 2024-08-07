@@ -7,15 +7,26 @@ Spectrometer:
   AWG: True
 
   Bridge:
-    Min Freq: 33 #GHz
-    Max Freq: 35 #GHz
-    Sample Freq: 8 #GSa/s
+    Min Freq: 8 #GHz
+    Max Freq: 12 #GHz
+    Sample Freq: 9.147 #GSa/s
     Det Freq: 2 #GSa/s
     Det Res: 12  #bit
+  
+  HP_AMP: 
+    state: True # High Power Amplifier
+
+  RCV: 
+    state: False
+
+  VideoAMP:
+    state: True
+    gain: 30 
+
     
 Resonators:
   Pent Loop-gap:
-    Center Freq: 9.6 #GHz
+    Center Freq: 9.147 #GHz
     Q: 80
 
 autoDEER:

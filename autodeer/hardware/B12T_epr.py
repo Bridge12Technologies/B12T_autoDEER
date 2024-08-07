@@ -60,12 +60,25 @@ class B12TInterface(Interface):
     def __init__(self,config_file) -> None:
         with open(config_file, mode='r') as file:
             config = yaml.safe_load(file)
-            self.config = config
-        self._connect_epr()      
+            self.config = config    
 
         # Dummy = config['Spectrometer']['Dummy']
         Bridge = config['Spectrometer']['Bridge']
-        # resonator_list = list(config['Resonators'].keys())
+        resonator_list = list(config['Resonators'].keys())
+        key1 = resonator_list[0]
+        self.fc = self.config['Resonators'][key1]['Center Freq'] * 1e9 # Hz
+        self.Q = self.config['Resonators'][key1]['Q']
+
+        # receiver amplifier
+        self.rcv_state = config['Spectrometer']['RCV']['state']
+
+        # video amplifier
+        self.vva_state = config['Spectrometer']['VideoAMP']['state']
+        self.vva_gain = config['Spectrometer']['VideoAMP']['gain']
+
+        # high power amplifier
+        self.hamp_state = config['Spectrometer']['HP_AMP']['state']
+
         # self.state = False
         # self.speedup = Dummy['speedup']
         # self.pulses = {}
@@ -76,10 +89,7 @@ class B12TInterface(Interface):
         # else:
         #     self.ESEEM = 0
 
-        # Create virtual mode
-        # key1 = resonator_list[0]
-        # fc = self.config['Resonators'][key1]['Center Freq']
-        # Q = self.config['Resonators'][key1]['Q']
+
         # def lorenz_fcn(x, centre, sigma):
         #     y = (0.5*sigma)/((x-centre)**2 + (0.5*sigma)**2)
         #     return y
@@ -88,9 +98,19 @@ class B12TInterface(Interface):
         # x = np.linspace(33,35)
         # scale = 75/mode(x).max()
         # self.mode = lambda x: lorenz_fcn(x, fc, fc/Q) * scale
+        
         super().__init__(log=hw_log)
          
-
+    def connect(self):
+        self._connect_epr()
+        self.send_message(".server.opmode = 'Operate'")
+        self.send_message(".spec.BRIDGE.Frequency = %0.03f" %(self.fc))
+        self.send_message(".spec.BRIDGE.RecvAmp = %i" %(self.rcv_state))
+        self.send_message(".spec.BRIDGE.VideoAmp = %i" %(self.vva_state))
+        self.send_message(".spec.BRIDGE.VideoGain = %i" %(self.vva_gain))
+        self.send_message(".spec.BRIDGE.IO2 = %i" %(self.hamp_state))
+        return super().connect()
+        
     def launch(self, sequence, savename: str, **kwargs):
         hw_log.info(f"Launching {sequence.name} sequence")
         self.state = True
@@ -108,8 +128,8 @@ class B12TInterface(Interface):
         elif isinstance(self.cur_exp, ReptimeScan):
             self._run_reptimescan(self.cur_exp)
             dset = create_dataset_from_b12t('C:/SpecMan4EPRData/buffer/reptimescan.exp')
-        elif isinstance(self.cur_exp, ResonatorProfileSequence)
-            self._run_respro(self, self.cur_exp)
+        elif isinstance(self.cur_exp, ResonatorProfileSequence):
+            self._run_respro(self.cur_exp)
             dset = create_dataset_from_b12t('C:/SpecMan4EPRData/buffer/respro.exp')
         return super().acquire_dataset(dset)
     
@@ -157,8 +177,6 @@ class B12TInterface(Interface):
     
     def _run_fsweep(self, FieldSweepSequence: FieldSweepSequence):
         self.send_message(".server.open = 'two pulse echo fse2.tpl'")
-        self.send_message(".server.opmode = 'Operate'")
-        self.send_message(".spec.BRIDGE.RecvAmp = 0")
         self.send_message(".server.COMPILE")
         self.send_message(".daemon.fguid = 'fsweep'")
         if '0' in self.send_message(".daemon.state"):
@@ -168,10 +186,9 @@ class B12TInterface(Interface):
             time.sleep(0.2)
     
     def _run_reptimescan(self, ReptimeScan: ReptimeScan):
+        print(f".exp.expaxes.P.Sweep.string = {ReptimeScan.B.value:0.04f} G")
         self.send_message(".server.open = 'two pulse echo SRT.tpl'")
-        self.send_message(".server.opmode = 'Operate'")
-        self.send_message(".spec.BRIDGE.RecvAmp = 0")
-        self.send_message(".spec.FLD.Sweep = 82") # need to change later
+        self.send_message(f".exp.expaxes.P.Sweep.string = '{ReptimeScan.B.value:0.04f} G'") # need to change later
         self.send_message(".server.COMPILE")
         self.send_message(".daemon.fguid = 'reptimescan'")
         if '0' in self.send_message(".daemon.state"):
@@ -183,8 +200,6 @@ class B12TInterface(Interface):
     def _run_respro(self, ResonatorProfileSequence: ResonatorProfileSequence):
         reptime = ResonatorProfileSequence.reptime
         self.send_message(".server.open = 'two pulse echo Nutation Bandwidth2.tpl'")
-        self.send_message(".server.opmode = 'Operate'")
-        self.send_message(".spec.BRIDGE.RecvAmp = 0")
         self.send_message(".exp.expaxes.P.RepTime.string = %s us" %reptime)
         self.send_message(".server.COMPILE")
         self.send_message(".daemon.fguid = 'respro'")
@@ -229,7 +244,6 @@ def _run_field_sweep(sequence):
     data = add_phaseshift(data, 0.05)
     return axis,data
     pass
-
 
 def _simulate_deer(sequence,exp_type=None):
 
