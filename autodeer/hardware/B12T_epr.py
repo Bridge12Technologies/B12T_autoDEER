@@ -5,6 +5,7 @@ from autodeer.sequences import *
 from autodeer.FieldSweep import create_Nmodel
 import yaml
 
+import datetime
 import numpy as np
 import deerlab as dl
 import time
@@ -78,27 +79,8 @@ class B12TInterface(Interface):
 
         # high power amplifier
         self.hamp_state = config['Spectrometer']['HP_AMP']['state']
-
-        # self.state = False
-        # self.speedup = Dummy['speedup']
-        # self.pulses = {}
-        # self.start_time = 0
-        # self.SNR = Dummy['SNR']
-        # if 'ESEEM_depth' in Dummy.keys():
-        #     self.ESEEM = Dummy['ESEEM_depth']
-        # else:
-        #     self.ESEEM = 0
-
-
-        # def lorenz_fcn(x, centre, sigma):
-        #     y = (0.5*sigma)/((x-centre)**2 + (0.5*sigma)**2)
-        #     return y
-
-        # mode = lambda x: lorenz_fcn(x, fc, fc/Q)
-        # x = np.linspace(33,35)
-        # scale = 75/mode(x).max()
-        # self.mode = lambda x: lorenz_fcn(x, fc, fc/Q) * scale
         
+        self.saving_path = 'C:/SpecMan4EPRData/buffer/'
         super().__init__(log=hw_log)
          
     def connect(self):
@@ -116,21 +98,22 @@ class B12TInterface(Interface):
         self.state = True
         self.cur_exp = sequence
         self.start_time = time.time()
+        self.fguid = self.cur_exp.name + "_" +  datetime.datetime.now().strftime('%Y%m%d_%H%M_')
+        
+        if isinstance(self.cur_exp, FieldSweepSequence):
+            self._run_fsweep(self.cur_exp)
+        elif isinstance(self.cur_exp, ReptimeScan):
+            self._run_reptimescan(self.cur_exp)
+        elif isinstance(self.cur_exp, ResonatorProfileSequence):
+            self._run_respro(self.cur_exp)
+
         return super().launch(sequence, savename)
     
     def acquire_dataset(self,**kwargs):
         hw_log.debug("Acquiring dataset")
 
-        if isinstance(self.cur_exp, FieldSweepSequence):
-            self._run_fsweep(self.cur_exp)
-            dset = create_dataset_from_b12t('C:/SpecMan4EPRData/buffer/fsweep.exp')
-            # dset = create_dataset_from_b12t('G:/Shared drives/B12T MRD Exchange/Knowledge/autodeer/data/1921file.exp')
-        elif isinstance(self.cur_exp, ReptimeScan):
-            self._run_reptimescan(self.cur_exp)
-            dset = create_dataset_from_b12t('C:/SpecMan4EPRData/buffer/reptimescan.exp')
-        elif isinstance(self.cur_exp, ResonatorProfileSequence):
-            self._run_respro(self.cur_exp)
-            dset = create_dataset_from_b12t('C:/SpecMan4EPRData/buffer/respro.exp')
+        dset = create_dataset_from_b12t(self.saving_path + self.fguid + '.exp')
+        
         return super().acquire_dataset(dset)
     
     def tune_rectpulse(self,*,tp, LO, B, reptime,**kwargs):
@@ -178,7 +161,7 @@ class B12TInterface(Interface):
     def _run_fsweep(self, FieldSweepSequence: FieldSweepSequence):
         self.send_message(".server.open = 'two pulse echo fse2.tpl'")
         self.send_message(".server.COMPILE")
-        self.send_message(".daemon.fguid = 'fsweep'")
+        self.send_message(f".daemon.fguid = '{self.fguid}'")
         if '0' in self.send_message(".daemon.state"):
             self.send_message(".daemon.stop")
         self.send_message(".daemon.run")
@@ -186,11 +169,10 @@ class B12TInterface(Interface):
             time.sleep(0.2)
     
     def _run_reptimescan(self, ReptimeScan: ReptimeScan):
-        print(f".exp.expaxes.P.Sweep.string = {ReptimeScan.B.value:0.04f} G")
         self.send_message(".server.open = 'two pulse echo SRT.tpl'")
         self.send_message(f".exp.expaxes.P.Sweep.string = '{ReptimeScan.B.value:0.04f} G'") # need to change later
         self.send_message(".server.COMPILE")
-        self.send_message(".daemon.fguid = 'reptimescan'")
+        self.send_message(f".daemon.fguid = '{self.fguid}'")
         if '0' in self.send_message(".daemon.state"):
             self.send_message(".daemon.stop")
         self.send_message(".daemon.run")
@@ -202,7 +184,7 @@ class B12TInterface(Interface):
         self.send_message(".server.open = 'two pulse echo Nutation Bandwidth2.tpl'")
         self.send_message(".exp.expaxes.P.RepTime.string = %s us" %reptime)
         self.send_message(".server.COMPILE")
-        self.send_message(".daemon.fguid = 'respro'")
+        self.send_message(f".daemon.fguid = '{self.fguid}'")
         if '0' in self.send_message(".daemon.state"):
             self.send_message(".daemon.stop")
         self.send_message(".daemon.run")
