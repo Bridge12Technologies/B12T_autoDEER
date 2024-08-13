@@ -20,7 +20,6 @@ import autodeer.sequences as ad_seqs
 import xarray as xr
 from deerlab import correctphase
 from deerlab import deerload
-import dnplab as dnp
 import copy
 
 # =============================================================================
@@ -164,30 +163,6 @@ def create_dataset_from_bruker(filepath):
     attr['shots'] = int(params['DSL']['ftEpr']['ShotsPLoop'])
     
     return xr.DataArray(data, dims=dims, coords=coords, attrs=attr)
-
-def create_dataset_from_b12t(filepath):
-    data = dnp.load(filepath, autodetect_coords = True, autodetect_dims = True)
-    data_real = data['x',0].sum('x')
-    data_imag = data['x',1].sum('x')
-    data = data_real + 1j*data_imag
-    for dim in data.dims:
-        if dim + '_unit' in data.attrs and data.attrs[dim + '_unit'] == 'T':
-            data.coords[dim] *= 1e4 # convert unit to Gauss
-            data.attrs[dim + '_unit'] = 'G'
-
-    default_labels = ['X','Y','Z','T']
-    dims = default_labels[:len(data.dims)]
-    attrs = data.attrs
-    coords = data.coords.coords
-    attrs['LO'] = float(attrs['BRIDGE_Frequency'].replace(' GHz', ''))
-    attrs['shots'] = int(attrs['System_Shots']) if int(attrs['System_Shots']) != 0 else 1
-    attrs['nAvgs'] = eval(attrs['streams_scans'])[0]
-    attrs['nPcyc'] = int(attrs['idx']) if 'idx' in attrs else 1
-    attrs['reptime'] = attrs['RepTime']
-    # for key, val in attrs.items():
-    #     print(key, val)
-    return xr.DataArray(data.values, dims=dims, coords=coords, attrs=attrs)
-
 
 @xr.register_dataarray_accessor("epr")
 class EPRAccessor:

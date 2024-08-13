@@ -5,12 +5,14 @@ from autodeer.sequences import *
 from autodeer.FieldSweep import create_Nmodel
 import yaml
 
+import xarray as xr
 import datetime
 import numpy as np
 import deerlab as dl
 import time
 import socket
 import logging
+import dnplab as dnp
 
 
 
@@ -112,7 +114,7 @@ class B12TInterface(Interface):
     def acquire_dataset(self,**kwargs):
         hw_log.debug("Acquiring dataset")
 
-        dset = create_dataset_from_b12t(self.saving_path + self.fguid + '.exp')
+        dset = self._create_dataset_from_b12t(self.saving_path + self.fguid + '.exp')
         
         return super().acquire_dataset(dset)
     
@@ -207,6 +209,31 @@ class B12TInterface(Interface):
         if convert: 
             return data.decode('utf-8')#.replace("sm>"+message.replace("\n", "")+"=", "")
         return data
+    
+    def __del__(self):
+        self.send_message(".server.opmode = 'Standby'")
+        self.sock.close()
+
+    def _create_dataset_from_b12t(filepath):
+        data = dnp.load(filepath, autodetect_coords = True, autodetect_dims = True)
+        data_real = data['x',0].sum('x')
+        data_imag = data['x',1].sum('x')
+        data = data_real + 1j*data_imag
+        for dim in data.dims:
+            if dim + '_unit' in data.attrs and data.attrs[dim + '_unit'] == 'T':
+                data.coords[dim] *= 1e4 # convert unit to Gauss
+                data.attrs[dim + '_unit'] = 'G'
+
+        default_labels = ['X','Y','Z','T']
+        dims = default_labels[:len(data.dims)]
+        attrs = data.attrs
+        coords = data.coords.coords
+        attrs['LO'] = float(attrs['BRIDGE_Frequency'].replace(' GHz', ''))
+        attrs['shots'] = int(attrs['System_Shots']) if int(attrs['System_Shots']) != 0 else 1
+        attrs['nAvgs'] = eval(attrs['streams_scans'])[0]
+        attrs['nPcyc'] = int(attrs['idx']) if 'idx' in attrs else 1
+        attrs['reptime'] = attrs['RepTime']
+        return xr.DataArray(data.values, dims=dims, coords=coords, attrs=attrs)
 
 def _run_field_sweep(sequence):
     # Assuming a Nitroxide sample
