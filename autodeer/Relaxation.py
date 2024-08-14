@@ -200,11 +200,7 @@ class ReptimeAnalysis():
             The sequence object describing the experiment. (not currently used)
         """
         # self.axis = dataset.axes[0]
-        if 'reptime' in dataset:
-            self.axis = dataset['reptime']
-        else:
-            self.axis = dataset['X']
-
+        self.axis = dataset['reptime']
         # if self.axis.max() > 1e4:
         #     self.axis /= 1e3 # ns -> us
         # self.data = dataset.data/np.max(dataset.data)
