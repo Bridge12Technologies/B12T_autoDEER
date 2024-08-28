@@ -348,7 +348,7 @@ class autoDEERWorker(QtCore.QRunnable):
         elif deertype == '3pDEER':
             deer.select_pcyc("8step_3p")
 
-        deer._estimate_time();
+        deer._estimate_time()
 
         self.interface.launch(deer,savename=self.savename(savename_type,savename_suffix),IFgain=2)
         time.sleep(30) # Always wait for the experiment to properly start
