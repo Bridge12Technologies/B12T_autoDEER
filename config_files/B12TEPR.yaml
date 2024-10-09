@@ -4,12 +4,14 @@ Spectrometer:
   Model: XBand
   Local Name: B12T
 
-  AWG: True
+  AWG: 
+    state: True
+    frequency: 250 # MHz
 
   Bridge:
     Min Freq: 8 #GHz
     Max Freq: 12 #GHz
-    Sample Freq: 9.147 #GSa/s
+    Sample Freq: 9.355 #GSa/s
     Det Freq: 2 #GSa/s
     Det Res: 12  #bit
   
@@ -17,17 +19,21 @@ Spectrometer:
     state: True # High Power Amplifier
 
   RCV: 
-    state: False
+    state: True
 
   VideoAMP:
     state: True
-    gain: 30 
+    gain: 48
+
+  Field:
+    StartField: 3.28 # kG
 
     
 Resonators:
   Pent Loop-gap:
-    Center Freq: 9.147 #GHz
+    Center Freq: 9.355 #GHz
     Q: 80
+    bandwidth: 200 # MHz
 
 autoDEER:
   logging:
@@ -45,3 +51,14 @@ autoDEER:
   
   Refresh_time: 0.5  # mins Default: 3
   cores: 1
+
+initial_params:
+  guess_tau1: 140 # ns
+  guess_tau2: 600 # ns
+  fix_tau1: True # ns
+  fix_tau2: False # ns
+  t90: 16 #ns
+  t180: 32 #ns
+  t_start: -100 # ns
+  t_step: 8 # ns
+  t_size: 64 
