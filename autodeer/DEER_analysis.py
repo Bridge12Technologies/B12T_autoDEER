@@ -376,6 +376,7 @@ def background_func(t, fit):
     conc = fit.conc
     prod = 1
     scale = 1
+
     if len(pathways) > 1:
         for i in pathways:
             if isinstance(i, list):
@@ -458,26 +459,27 @@ def DEERanalysis_plot(fit, background:bool, ROI=None, axs=None, fig=None, text=T
     pathways = Vmodel.pathways
 
     # Calculate background
-    def background_func(t, fit):
-        conc = fit.conc
-        prod = 1
-        scale = 1
-        for i in pathways:
-            if type(i) is list:
-                # linked pathway
-                lam = getattr(fit, f"lam{i[0]}{i[1]}")
-                scale += -1 * lam
-                for j in i:
-                    reftime = getattr(fit, f"reftime{pathways.index(j)+1}")
-                    prod *= dl.bg_hom3d(t-reftime, conc, lam)
+    # def background_func(t, fit):
+    #     conc = fit.conc
+    #     prod = 1
+    #     scale = 1
+        
+    #     for i in pathways:
+    #         if type(i) is list:
+    #             # linked pathway
+    #             lam = getattr(fit, f"lam{i[0]}{i[1]}")
+    #             scale += -1 * lam
+    #             for j in i:
+    #                 reftime = getattr(fit, f"reftime{pathways.index(j)+1}")
+    #                 prod *= dl.bg_hom3d(t-reftime, conc, lam)
 
-            else:
-                reftime = getattr(fit, f"reftime{i}")
-                lam = getattr(fit, f"lam{i}")
-                prod *= dl.bg_hom3d(t-reftime, conc, lam)
-                scale += -1 * lam
+    #         else:
+    #             reftime = getattr(fit, f"reftime{i}")
+    #             lam = getattr(fit, f"lam{i}")
+    #             prod *= dl.bg_hom3d(t-reftime, conc, lam)
+    #             scale += -1 * lam
 
-        return fit.P_scale * scale * prod
+    #     return fit.P_scale * scale * prod
 
     if axs is None and fig is None:
         fig, axs = plt.subplot_mosaic([
@@ -1099,7 +1101,7 @@ def calc_deer_settings(experiment:str, CPdecay=None, Refocused2D=None, target_ti
         
         if tau2 < 2.5:
             # Dipolar evo time still too short. Hardcoding a 2.5us dipolar evo time
-            tau1,tau2 = Refocused2D.optimal_tau1(type='4pDEER',tau2=2.5)
+            tau1 = Refocused2D.optimal_tau1(tau2=2.5)
         
 
         deer_settings['tau1'] = round_step(tau1,waveform_precision/1e3)
