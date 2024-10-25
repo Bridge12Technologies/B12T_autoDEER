@@ -968,7 +968,7 @@ class autoDEERUI(QMainWindow):
 
         test_result = fitresult.check_decay()
 
-        if test_result:
+        if test_result == 0:
             if self.waitCondition is not None: # Wake up the runner thread
                 self.waitCondition.wakeAll()
         else:
