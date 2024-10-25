@@ -14,7 +14,7 @@ import socket
 import logging
 
 import dnplab as dnp
-
+import os
 
 hw_log = logging.getLogger('interface.B12TEpr')
 
@@ -54,8 +54,8 @@ class B12TInterface(Interface):
         self.saving_path = 'C:/SpecMan4EPRData/buffer/'
 
         # check cp run
-        self.cp_ran = False
-
+        self.run_deer = False
+        self.run_cp = False
         # relaxataion time
         self.guess_tau1 = config['initial_params']['guess_tau1'] * 1e-9
         self.guess_tau2 = config['initial_params']['guess_tau2'] * 1e-9
@@ -72,6 +72,15 @@ class B12TInterface(Interface):
         self.t_size = config['initial_params']['t_size'] 
         self.t_stop = self.t_start + (self.t_size - 1) * self.t_step
 
+        # For SNR
+        self.current_scan_file = None
+
+        # For Experiment Parameters
+        self.LO = self.fc # Hz
+        self.scans = 1
+        self.shots = 1
+        self.reptime = 100e-6 # s
+        self.ncyc = 1
         super().__init__(log=hw_log)
          
     def connect(self):
@@ -106,11 +115,11 @@ class B12TInterface(Interface):
             # self.fguid = self.cur_exp.name
             pass
         elif isinstance(self.cur_exp, DEERSequence):
-            if self.cp_ran:
-                self._run_deer(self.cur_exp)
-            else:
+            if not self.run_cp and not self.run_deer:
                 self._run_CP_relax(self.cur_exp)
-                
+            else:
+                self._run_deer(self.cur_exp)
+
         elif isinstance(self.cur_exp, T2RelaxationSequence):
             self._run_T2_relax(self.cur_exp)
 
@@ -122,11 +131,23 @@ class B12TInterface(Interface):
 
         return super().launch(sequence, savename)
     
-    def acquire_dataset(self,**kwargs):
-        hw_log.debug("Acquiring dataset")
+    def acquire_dataset(self, **kwargs):
 
-        dset = self._create_dataset_from_b12t(self.saving_path + self.fguid + '.exp')
-        
+        if not self.isrunning():
+            if self.fguid + '.exp' in os.listdir(self.saving_path):
+                hw_log.debug("Acquiring dataset")
+                dset = self._create_dataset_from_b12t(self.saving_path + self.fguid + '.exp')
+                self.current_scan_file = None
+
+        else:
+            while True:
+                scan_files = [x for x in os.listdir(self.saving_path) if (self.fguid in x and x != self.fguid + '.exp' and '~' not in x and '.exp' in x)]
+                if scan_files and scan_files[-1] != self.current_scan_file:
+                    self.current_scan_file = scan_files[-1]
+                    time.sleep(1)
+                    dset = self._create_dataset_from_b12t(self.saving_path + self.current_scan_file)
+                    break
+
         return super().acquire_dataset(dset)
     
     def tune_rectpulse(self,*,tp, LO, B, reptime,**kwargs):
@@ -168,129 +189,221 @@ class B12TInterface(Interface):
     def terminate(self) -> None:
         self.state = False
         hw_log.info("Terminating sequence")
+        self.send_message('.d.stop')
+        self.fguid = self.current_scan_file.replace('.exp', '').replace('.d01', '')
         return super().terminate()
     
+    def terminate_at(self, criterion, test_interval=2, keep_running=False, verbosity=0, autosave=True):
+        '''
+        Modified from super class
+        
+        '''
+        test_interval_seconds = test_interval * 60
+        condition = False
+        last_scan = 0
+
+        while not condition:
+
+            if not self.isrunning():
+                msg = "Experiments has finished before criteria met."
+                # raise RuntimeError(msg)
+                print(msg)
+                return 
+
+            start_time = time.time()
+            data = self.acquire_dataset()
+            if autosave:
+                self.log.debug(f"Autosaving to {os.path.join(self.savefolder,self.savename)}")
+                data.to_netcdf(os.path.join(self.savefolder,self.savename),engine='h5netcdf',invalid_netcdf=True)
+
+            try:
+                # nAvgs = data.num_scans.value
+                nAvgs = data.attrs['nAvgs']
+
+            except AttributeError or KeyError:
+                self.log.warning("WARNING: Dataset missing number of averages(nAvgs)!")
+                nAvgs = 1
+            finally:
+                if nAvgs < 1:
+                    time.sleep(30)  # Replace with single scan time
+                    continue
+                elif nAvgs <= last_scan:
+                    time.sleep(30)
+                    continue    
+            last_scan = nAvgs
+
+            if verbosity > 0:
+                print("Testing")
+
+            if isinstance(criterion,list):
+                conditions = [crit.test(data, verbosity) for crit in criterion]
+                condition = any(conditions)
+            else:
+                condition = criterion.test(data, verbosity)
+            if not condition:
+                end_time = time.time()
+                if (end_time - start_time) < test_interval_seconds:
+                    if verbosity > 0:
+                        print("Sleeping")
+                    time.sleep(test_interval_seconds - (end_time - start_time))
+        
+        if isinstance(criterion,list):
+            for i,crit in enumerate(criterion):
+                if conditions[i]:
+                    if callable(crit.end_signal):
+                        crit.end_signal()
+                
+        else:
+            if callable(criterion.end_signal):
+                criterion.end_signal()
+        
+        self.terminate()
+        pass
     
     def _run_fsweep(self, sequence: FieldSweepSequence):
-        LO = sequence.LO.value * 1e9
-        # reptime = sequence.reptime.value
-        reptime = 100
-        print('fsweep', LO)
+        self.LO = sequence.LO.value * 1e9
+        # self.reptime = sequence.reptime.value
+        self.reptime = 100e-6 # s
+        self.ncyc = 1
+        self.shots = sequence.shots.value
+        self.scans = sequence.averages.value
         self.send_message(".server.open = 'AutoDEER/AD_Fieldsweep.tpl'")
-        self.send_message(".spec.BRIDGE.Frequency = %0.03f" %LO)
-        self.send_message(".exp.expaxes.P.RepTime.string = '%s us'" %reptime)
+        self.send_message(".exp.EXPAXES.I.reps = %i" %self.shots)
+        self.send_message(".exp.EXPAXES.P.reps = %i" %self.scans)
+        self.send_message(".spec.BRIDGE.Frequency = %0.03f" %self.LO)
+        self.send_message(".exp.expaxes.P.RepTime.string = '%s s'" %self.reptime)
         self.send_message(".server.COMPILE")
         self.send_message(f".daemon.fguid = '{self.fguid}'")
         if '0' in self.send_message(".daemon.state"):
             self.send_message(".daemon.stop")
         self.send_message(".daemon.run")
-        while self.isrunning():
-            time.sleep(0.2)
     
     def _run_reptimescan(self, sequence: ReptimeScan):
-        LO = sequence.LO.value * 1e9
-        reptime = 100
+        self.LO = sequence.LO.value * 1e9
+        self.reptime = 100e-6
         sweep = sequence.B.value - self.start_field
+        self.shots = sequence.shots.value
+        self.scans = sequence.averages.value
         self.send_message(".server.open = 'AutoDEER/AD_ShotRepetitionTime.tpl'")
-        self.send_message(".spec.BRIDGE.Frequency = %0.03f" %LO)
-        self.send_message(".exp.expaxes.P.RepTime.string = '%s us'" %reptime)
+        self.send_message(".exp.EXPAXES.I.reps = %i" %self.shots)
+        self.send_message(".exp.EXPAXES.P.reps = %i" %self.scans)
+        self.send_message(".spec.BRIDGE.Frequency = %0.03f" %self.LO)
+        self.send_message(".exp.expaxes.P.RepTime.string = '%s s'" %self.reptime)
         self.send_message(f".spec.FLD.Sweep = {sweep:0.04f}")
         self.send_message(".server.COMPILE")
         self.send_message(f".daemon.fguid = '{self.fguid}'")
         if '0' in self.send_message(".daemon.state"):
             self.send_message(".daemon.stop")
         self.send_message(".daemon.run")
-        while self.isrunning():
-            time.sleep(0.2)
     
     def _run_respro(self, sequence: ResonatorProfileSequence):
         # reptime = sequence.reptime.value
-        reptime = 100
+        self.reptime = 100e-6
         sweep = sequence.B.value - self.start_field
-        print('RES', sweep)
         self.gyro = sequence.gyro
         LO, Sweep = self._calculate_nutation_bandwidth(self.fc, self.awg_freq, self.start_field, sweep, self.resonator_bandwidth)
+        self.shots = sequence.shots.value
+        self.scans = sequence.averages.value
         self.send_message(".server.open = 'AutoDEER/AD_ResonatorProfile.tpl'")
+        self.send_message(".exp.EXPAXES.I.reps = %i" %self.shots)
+        self.send_message(".exp.EXPAXES.P.reps = %i" %self.scans)
         self.send_message(".exp.expaxes.Y.LO.string = '%s'" %LO)
         self.send_message(".exp.expaxes.Y.Sweep.string = '%s'" %Sweep)
         self.send_message(f".spec.FLD.Sweep = {sweep:0.04f}")
-        self.send_message(".exp.expaxes.P.RepTime.string = '%s us'" %reptime)
+        self.send_message(".exp.expaxes.P.RepTime.string = '%s s'" %self.reptime)
         self.send_message(".server.COMPILE")
         self.send_message(f".daemon.fguid = '{self.fguid}'")
         if '0' in self.send_message(".daemon.state"):
             self.send_message(".daemon.stop")
         self.send_message(".daemon.run")
-        while self.isrunning():
-            time.sleep(0.2) 
 
     def _run_CP_relax(self, sequence: DEERSequence):
-        LO = sequence.LO.value * 1e9
+        self.run_cp = True
+        self.LO = sequence.LO.value * 1e9
         # reptime = sequence.reptime.value
-        reptime = 100
+        self.reptime = 100e-6
         sweep = sequence.B.value - self.start_field
+        self.shots = sequence.shots.value
+        self.scans = sequence.averages.value
         self.send_message(".server.open = 'AutoDEER/AD_CarrPurcell.tpl'")
-        self.send_message(".spec.BRIDGE.Frequency = %0.03f" %LO)
+        self.send_message(".exp.EXPAXES.I.reps = %i" %self.shots)
+        self.send_message(".exp.EXPAXES.P.reps = %i" %self.scans)
+        self.send_message(".spec.BRIDGE.Frequency = %0.03f" %self.LO)
         self.send_message(f".spec.FLD.Sweep = {sweep:0.04f}")
-        self.send_message(".exp.expaxes.P.RepTime.string = '%s us'" %reptime)
+        self.send_message(".exp.expaxes.P.RepTime.string = '%s s'" %self.reptime)
         self.send_message(".server.COMPILE")
         self.send_message(f".daemon.fguid = '{self.fguid}'")
         if '0' in self.send_message(".daemon.state"):
             self.send_message(".daemon.stop")
         self.send_message(".daemon.run")
-        while self.isrunning():
-            time.sleep(0.2) 
 
     def _run_T2_relax(self, sequence: T2RelaxationSequence):
-        LO = sequence.LO.value * 1e9
+        self.LO = sequence.LO.value * 1e9
         # reptime = sequence.reptime.value
-        reptime = 100
+        self.reptime = 100e-6
         sweep = sequence.B.value - self.start_field
+        self.shots = sequence.shots.value
+        self.scans = sequence.averages.value
         self.send_message(".server.open = 'AutoDEER/AD_HahnEchoDecay.tpl'")
-        self.send_message(".spec.BRIDGE.Frequency = %0.03f" %LO)
+        self.send_message(".exp.EXPAXES.I.reps = %i" %self.shots)
+        self.send_message(".exp.EXPAXES.P.reps = %i" %self.scans)
+        self.send_message(".spec.BRIDGE.Frequency = %0.03f" %self.LO)
         self.send_message(f".spec.FLD.Sweep = {sweep:0.04f}")
-        self.send_message(".exp.expaxes.P.RepTime.string = '%s us'" %reptime)
+        self.send_message(".exp.expaxes.P.RepTime.string = '%s s'" %self.reptime)
         self.send_message(".server.COMPILE")
         self.send_message(f".daemon.fguid = '{self.fguid}'")
         if '0' in self.send_message(".daemon.state"):
             self.send_message(".daemon.stop")
         self.send_message(".daemon.run")
-        while self.isrunning():
-            time.sleep(0.2) 
     
     def _run_2D_relax(self, sequence: RefocusedEcho2DSequence):
-        LO = sequence.LO.value * 1e9
+        self.LO = sequence.LO.value * 1e9
         sweep = sequence.B.value - self.start_field
+        self.shots = sequence.shots.value
+        self.scans = sequence.averages.value
+        self.reptime = 100e-6
         self.send_message(".server.open = 'AutoDEER/AD_2DRefocusedEcho.tpl'")
-        self.send_message(".spec.BRIDGE.Frequency = %0.03f" %LO)
+        self.send_message(".exp.EXPAXES.I.reps = %i" %self.shots)
+        self.send_message(".exp.EXPAXES.P.reps = %i" %self.scans)
+        self.send_message(".spec.BRIDGE.Frequency = %0.03f" %self.LO)
         self.send_message(f".spec.FLD.Sweep = {sweep:0.04f}")
-        # self.send_message(".exp.expaxes.P.RepTime.string = %s us" %reptime)
+        self.send_message(".exp.expaxes.P.RepTime.string = %s s" %self.reptime)
         self.send_message(".server.COMPILE")
         self.send_message(f".daemon.fguid = '{self.fguid}'")
         if '0' in self.send_message(".daemon.state"):
             self.send_message(".daemon.stop")
         self.send_message(".daemon.run")
-        while self.isrunning():
-            time.sleep(0.2) 
     
     def _run_deer(self, sequence: DEERSequence):
+        self.run_cp = False
+        self.t_step = sequence.dt * 1e-9
 
         # force tau1 and tau2 to a value
         if self.tau1:
             sequence.tau1.value = self.tau1 * 1e9
-        
+        else:
+            self.tau1 = sequence.tau1.value * 1e-9
+
         if self.tau2:
+            self.tau2 = self._check_tau2(self.tau2 * 1e-9)
             sequence.tau2.value = self.tau2 * 1e9
-
-
+        else:
+            self.tau2 = sequence.tau2.value * 1e-9
+            self.t_stop = self.tau2 - self.t180 - 1e-9
+            self.t_size = int((self.t_stop - self.t_start)/self.t_step) + 1
+            
         exc_pulse_freq = sequence.exc_pulse.freq.value * 1e9 # Hz
-        LO = sequence.LO.value * 1e9 + exc_pulse_freq # Hz
-
+        self.LO = sequence.LO.value * 1e9 + exc_pulse_freq # Hz
         sweep = sequence.B.value - self.start_field
-        tau1 = sequence.tau1.value
-        tau2 = sequence.tau2.value
-        print('run_deer', tau1, tau2)
+        self.shots = sequence.shots.value
+        self.scans = sequence.averages.value
+        self.reptime = 100e-6
         self.send_message(".server.open = 'AutoDEER/AD_4PulseDEER.tpl'")
-        self.send_message(".spec.BRIDGE.Frequency = %0.03f" %LO)
+        self.send_message(".exp.EXPAXES.I.reps = %i" %self.shots)
+        self.send_message(".exp.EXPAXES.X.size = %i" %self.t_size)
+        self.send_message(".exp.EXPAXES.P.reps = %i" %self.scans)
+        self.send_message(".exp.expaxes.P.RepTime.string = %s s" %self.reptime)
+        self.send_message(".spec.BRIDGE.Frequency = %0.03f" %self.LO)
         self.send_message(f".exp.expaxes.P.tau1.string = '{self.tau1} s'")
         self.send_message(f".exp.expaxes.P.tau2.string = '{self.tau2} s'")
         self.send_message(f".exp.expaxes.P.t90.string = '{self.t90} s'")
@@ -301,8 +414,7 @@ class B12TInterface(Interface):
         if '0' in self.send_message(".daemon.state"):
             self.send_message(".daemon.stop")
         self.send_message(".daemon.run")
-        while self.isrunning():
-            time.sleep(0.2) 
+        self.run_deer = True
     
     def _connect_epr(self, address: str = 'localhost' , port_number: int = 8023) -> None:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -318,7 +430,7 @@ class B12TInterface(Interface):
         data = self.sock.recv(4096)
 
         if convert: 
-            return data.decode('utf-8')#.replace("sm>"+message.replace("\n", "")+"=", "")
+            return data.decode('utf-8')
         return data
     
     def __del__(self):
@@ -331,8 +443,8 @@ class B12TInterface(Interface):
         data_imag = data['x',1].sum('x')
         data = data_real + 1j*data_imag
 
-        if isinstance(self.cur_exp, RefocusedEcho2DSequence):
-            self.tau2 = self._calculate_tau2(data)
+        # if isinstance(self.cur_exp, RefocusedEcho2DSequence):
+        #     self.tau2 = self._calculate_tau2(data)
 
         for dim in data.dims:
             if dim + '_unit' in data.attrs and data.attrs[dim + '_unit'] == 'T':
@@ -348,9 +460,8 @@ class B12TInterface(Interface):
             dims = ['pulse0_tp', 'LO']
             coord_factors = [1e9, 1e-9]
         elif isinstance(self.cur_exp, (DEERSequence)):
-            if not self.cp_ran:
+            if self.run_cp:
                 dims = ['tau1', 'tau2', 'tau3', 'tau4']
-                self.cp_ran = True
             else:
                 dims = ['t', 't2', 't3', 't4']
             coord_factors = [1e6, 1e6, 1e6, 1e6]
@@ -377,11 +488,11 @@ class B12TInterface(Interface):
                 coords[index] *= coord_factors[index]
 
         attrs = data.attrs
-        attrs['LO'] = float(attrs['BRIDGE_Frequency'].replace(' GHz', ''))
-        attrs['shots'] = int(attrs['System_Shots']) if int(attrs['System_Shots']) != 0 else 1
-        attrs['nAvgs'] = eval(attrs['streams_scans'])[0]
-        attrs['nPcyc'] = int(attrs['idx']) if 'idx' in attrs else 1
-        attrs['reptime'] = attrs['RepTime']
+        attrs['LO'] = self.LO * 1e-9 # GHz
+        attrs['shots'] = int(self.shots)
+        attrs['nAvgs'] = int(data.dnplab_attrs.get('scans')) if data.dnplab_attrs.get('scans') is not None else 1
+        attrs['nPcyc'] = int(self.ncyc)
+        attrs['reptime'] = self.reptime * 1e6 # us
         attrs ={**attrs, **get_all_fixed_param(self.cur_exp)}
         return xr.DataArray(data.values, dims=dims, coords=coords, attrs=attrs)
     
@@ -448,6 +559,12 @@ class B12TInterface(Interface):
         tau2s_diff_from_guess = [np.abs(x - self.guess_tau2) for x in tau2s] # find the closest value to initial guess
         tau2 = tau2s[np.argmin(tau2s_diff_from_guess)]
         if tau2 <= self.t_stop + self.t180:
+            tau2 = self.t_stop + self.t180 + 1e-9 # prevent overlapped pulse
+        return tau2
+    
+    def _check_tau2(self, tau2):
+        if tau2 <= self.t_stop + self.t180:
+            hw_log.info("change tau2 from %0.02f us to %0.02f to prevent overlapping pulse" %(tau2*10e6, self.t_stop + self.t180 + 1e-9))
             tau2 = self.t_stop + self.t180 + 1e-9 # prevent overlapped pulse
         return tau2
         
