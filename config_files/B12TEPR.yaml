@@ -11,7 +11,7 @@ Spectrometer:
   Bridge:
     Min Freq: 8 #GHz
     Max Freq: 12 #GHz
-    Sample Freq: 9.355 #GSa/s
+    Sample Freq: 9.44 #GSa/s
     Det Freq: 2 #GSa/s
     Det Res: 12  #bit
   
@@ -31,7 +31,7 @@ Spectrometer:
     
 Resonators:
   Pent Loop-gap:
-    Center Freq: 9.355 #GHz
+    Center Freq: 9.44 #GHz
     Q: 80
     bandwidth: 200 # MHz
 
